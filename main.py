@@ -1,9 +1,10 @@
+import os
+import json
+
 import discord
 from discord.ext import commands
 
 from dotenv import load_dotenv
-import os
-import json
 
 # Load environment variables from the appropriate file
 if os.path.exists('.env.development'):
@@ -22,16 +23,16 @@ with open(config_file) as config_file:
     config = json.load(config_file)
 
 BOT_TOKEN = config['discord_token']
+PREFIXES = config.get('prefixes', ['!'])
 
 intents = discord.Intents.default()
 intents.message_content = True
 intents.all()
 
-
 # Prefixes to be used by the bot
-def custom_prefixes(botName, msg):
-    prefixes = ['!']
-    return commands.when_mentioned_or(*prefixes)(botName, msg)
+def custom_prefixes(bot_name, msg):
+    prefixes = PREFIXES
+    return commands.when_mentioned_or(*prefixes)(bot_name, msg)
 
 
 bot = commands.Bot(command_prefix=custom_prefixes, intents=intents)
