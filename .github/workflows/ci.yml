@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop, '*/*' ]
+    branches-ignore: [ main, develop ]
   pull_request:
-    branches: [ main, develop, '*/*' ]
+    branches: [ main, develop ]
 
 jobs:
   build:
@@ -30,6 +30,4 @@ jobs:
       run: python -m compileall -q main.py cogs utils tests
 
     - name: Run tests
-      run: |
-        pip install pytest
-        pytest
+      run: python -m pytest
