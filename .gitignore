@@ -1,0 +1,10 @@
+.development
+config.development.json
+.venv/
+venv/
+.idea/
+__pycache__/
+audio/
+data/audio/
+cogs/__pycache__/
+.obsidian/
