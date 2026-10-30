@@ -1,10 +1,24 @@
+# Python
 .venv/
 venv/
-.idea/
 __pycache__/
+cogs/__pycache__/
+
+# IDE
+.idea/
+.obsidian/
+
+# Data
 audio/
 data/audio/
-cogs/__pycache__/
-.obsidian/
-*.development
-*.development.*
+
+# Environment files
+.env.development
+.env.test
+.env.production
+.env.local
+.env.*
+
+# Old config files (deprecated)
+.config.Development.json
+config.json
