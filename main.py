@@ -1,5 +1,4 @@
 import os
-import json
 
 import discord
 from discord.ext import commands
@@ -7,23 +6,19 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 # Load environment variables from the appropriate file
+# Priority: .env.development > .env
 if os.path.exists('.env.development'):
     load_dotenv('.env.development')
-else:
+elif os.path.exists('.env'):
     load_dotenv('.env')
 
 # Determine the environment
 environment = os.getenv('ENVIRONMENT', 'production')
 print(f"Running in {environment} environment.")
 
-# Load configuration based on the environment
-config_file = 'config.development.json' if environment == 'development' else 'config.json'
-
-with open(config_file) as config_file:
-    config = json.load(config_file)
-
-BOT_TOKEN = config['discord_token']
-PREFIXES = config.get('prefixes', ['!'])
+# Load configuration from environment variables
+BOT_TOKEN = os.getenv('DISCORD_TOKEN')
+PREFIXES = os.getenv('DISCORD_PREFIX', '!').split(',') if ',' in os.getenv('DISCORD_PREFIX', '!') else [os.getenv('DISCORD_PREFIX', '!')]
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -45,7 +40,7 @@ async def on_ready():
 
 
 def main():
-    bot.run(config['discord_token'])
+    bot.run(BOT_TOKEN)
 
 
 if __name__ == "__main__":
