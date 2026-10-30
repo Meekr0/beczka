@@ -44,7 +44,7 @@ class MusicCog(commands.Cog):
 
         # Check if user is in a voice channel
         if ctx.author.voice is None or ctx.author.voice.channel is None:
-            await ctx.send("Dołącz do kanału debilu xd")
+            await ctx.send("Join a voice channel first.")
             return
 
         # Connect to voice channel
@@ -68,14 +68,14 @@ class MusicCog(commands.Cog):
         vc = ctx.voice_client
         if vc is not None:
             await vc.disconnect()
-            await ctx.send("Pokonany samiec opuszcza kanał")
+            await ctx.send("Leaving the voice channel.")
         else:
-            await ctx.send("No kurwa debil xd")
+            await ctx.send("I'm not in a voice channel.")
 
     @commands.command()
     async def queue(self, ctx):
         if queue:
-            msg = await self.generateQueue()
+            msg = await self.generateQueue(limit=5)
             await ctx.send(msg)
         else:
             await ctx.send("The queue is empty")
@@ -93,7 +93,7 @@ class MusicCog(commands.Cog):
         global queue
         if queue:
             random.shuffle(queue)
-            msg = "Queue shuffled:\n"
+            msg = "Queue shuffled.\n"
             msg += await self.generateQueue()
             await ctx.send(msg)
         else:
@@ -105,15 +105,17 @@ class MusicCog(commands.Cog):
         vc = ctx.voice_client
         if vc is not None and vc.is_playing():
             vc.stop()
-            await ctx.send("Skipping...")
+            await ctx.send("Skipped current track.")
         else:
             await ctx.send("Nothing to skip")
 
-    async def generateQueue(self):
+    async def generateQueue(self, limit=None):
         msg = ""
-        for i, url in enumerate(queue):
+        for i, url in enumerate(queue[:limit] if limit else queue):
             title = await MusicUtils.getTitle(url)
             msg += f"{i + 1}. {title}\n"
+        if limit and len(queue) > limit:
+            msg += f"...and {len(queue) - limit} more tracks in queue."
         return msg
     
 
