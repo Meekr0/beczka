@@ -55,13 +55,35 @@ class MusicCog(commands.Cog):
         else:
             vc = currentChannel
 
-        queue.append(url)
-        title = await YouTubeService.get_title(url)
-
-        if vc.is_playing():
-            await ctx.send(f'{title} added to queue')
+        # Check if URL is a playlist
+        is_playlist = await YouTubeService.is_playlist(url)
+        
+        if is_playlist:
+            # Get all video URLs from the playlist
+            playlist_urls = await YouTubeService.get_playlist_urls(url)
+            playlist_title = await YouTubeService.get_playlist_title(url)
+            
+            if not playlist_urls:
+                await ctx.send("Couldn't fetch playlist videos.")
+                return
+            
+            # Add all playlist videos to queue
+            queue.extend(playlist_urls)
+            
+            if vc.is_playing():
+                await ctx.send(f'Playlist "{playlist_title}" added to queue ({len(playlist_urls)} tracks)')
+            else:
+                await ctx.send(f'Now playing playlist "{playlist_title}" ({len(playlist_urls)} tracks)')
+                await playNext(ctx, vc)
         else:
-            await playNext(ctx, vc)
+            # Single video
+            queue.append(url)
+            title = await YouTubeService.get_title(url)
+
+            if vc.is_playing():
+                await ctx.send(f'{title} added to queue')
+            else:
+                await playNext(ctx, vc)
 
     @commands.command()
     async def leave(self, ctx):
@@ -83,10 +105,7 @@ class MusicCog(commands.Cog):
     @commands.command()
     async def clear(self, ctx):
         queue.clear()
-        vc = ctx.voice_client
-        if vc is not None and vc.is_playing():
-            vc.stop()
-            await ctx.send("Clearing queue")
+        await ctx.send("Clearing queue...")
 
     @commands.command()
     async def shuffle(self, ctx):
@@ -112,6 +131,9 @@ class MusicCog(commands.Cog):
     async def generateQueue(self, limit=None):
         msg = ""
         for i, url in enumerate(queue[:limit] if limit else queue):
+            # Skip playlist URLs in queue (they should have been expanded already)
+            if await YouTubeService.is_playlist(url):
+                continue
             title = await YouTubeService.get_title(url)
             msg += f"{i + 1}. {title}\n"
         if limit and len(queue) > limit:
