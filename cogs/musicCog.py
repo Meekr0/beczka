@@ -2,27 +2,32 @@ import asyncio
 import discord
 import random
 from discord.ext import commands
-from utils.musicUtils import MusicUtils
+from services.service_detector import detect_service, get_supported_services_list, get_service_instance
 
 queue = []
 current_url = None
+current_service = None
 
-fileToPlayPath = MusicUtils.getFilePath()
+AUDIO_FILE_PATH = './data/audio/audio.webm'
+
 
 async def playNext(ctx, vc):
     global current_url
     if queue:
         current_url = queue.pop(0)
-        title = await MusicUtils.getTitle(current_url)
-        isAudioDownloaded = await MusicUtils.downloadAudio(current_url)
+        service = get_service_instance(detect_service(current_url))
+        
+        title = await service.get_title(current_url)
+        isAudioDownloaded = await service.download_audio(current_url, AUDIO_FILE_PATH)
         if isAudioDownloaded:
             await ctx.send(f'Now playing: {title}')
-            vc.play(discord.FFmpegPCMAudio(fileToPlayPath), after=lambda e: asyncio.run_coroutine_threadsafe(playNext(ctx, vc), vc.loop))
+            vc.play(discord.FFmpegPCMAudio(AUDIO_FILE_PATH), after=lambda e: asyncio.run_coroutine_threadsafe(playNext(ctx, vc), vc.loop))
         else:
             await ctx.send("Couldn't download the file")
             if queue:
                 await playNext(ctx, vc)
             else:
+                current_url = None
                 await ctx.send("Queue is empty, leaving the channel...")
                 await vc.disconnect()
     else:
@@ -42,9 +47,18 @@ class MusicCog(commands.Cog):
     @commands.command()
     async def play(self, ctx, *, url: str):
 
+        # Detect service from URL
+        detected_service = detect_service(url)
+        
+        if detected_service is None:
+            await ctx.send(f"Unsupported URL. Supported services: {get_supported_services_list()}")
+            return
+
+        service = get_service_instance(detected_service)
+
         # Check if user is in a voice channel
         if ctx.author.voice is None or ctx.author.voice.channel is None:
-            await ctx.send("Dołącz do kanału debilu xd")
+            await ctx.send("Join a voice channel first.")
             return
 
         # Connect to voice channel
@@ -55,27 +69,56 @@ class MusicCog(commands.Cog):
         else:
             vc = currentChannel
 
-        queue.append(url)
-        title = await MusicUtils.getTitle(url)
-
-        if vc.is_playing():
-            await ctx.send(f'{title} added to queue')
+        # Check if URL is a playlist
+        is_playlist = await service.is_playlist(url)
+        
+        if is_playlist:
+            # Get all video URLs from the playlist
+            playlist_urls = await service.get_playlist_urls(url)
+            playlist_title = await service.get_playlist_title(url)
+            
+            if not playlist_urls:
+                await ctx.send("Couldn't fetch playlist videos.")
+                return
+            
+            # Filter out unsupported URLs from playlist
+            valid_urls = [u for u in playlist_urls if detect_service(u) is not None]
+            
+            if not valid_urls:
+                await ctx.send("No supported URLs found in playlist.")
+                return
+            
+            # Add only valid URLs to queue
+            queue.extend(valid_urls)
+            
+            if vc.is_playing():
+                await ctx.send(f'Playlist "{playlist_title}" added to queue ({len(playlist_urls)} tracks)')
+            else:
+                await ctx.send(f'Now playing playlist "{playlist_title}" ({len(playlist_urls)} tracks)')
+                await playNext(ctx, vc)
         else:
-            await playNext(ctx, vc)
+            # Single video
+            queue.append(url)
+            title = await service.get_title(url)
+            
+            if vc.is_playing():
+                await ctx.send(f'{title} added to queue')
+            else:
+                await playNext(ctx, vc)
 
     @commands.command()
     async def leave(self, ctx):
         vc = ctx.voice_client
         if vc is not None:
             await vc.disconnect()
-            await ctx.send("Pokonany samiec opuszcza kanał")
+            await ctx.send("Leaving the voice channel.")
         else:
-            await ctx.send("No kurwa debil xd")
+            await ctx.send("I'm not in a voice channel.")
 
     @commands.command()
     async def queue(self, ctx):
         if queue:
-            msg = await self.generateQueue()
+            msg = await self.generateQueue(limit=5)
             await ctx.send(msg)
         else:
             await ctx.send("The queue is empty")
@@ -83,18 +126,15 @@ class MusicCog(commands.Cog):
     @commands.command()
     async def clear(self, ctx):
         queue.clear()
-        vc = ctx.voice_client
-        if vc is not None and vc.is_playing():
-            vc.stop()
-            await ctx.send("Clearing queue")
+        await ctx.send("Clearing queue...")
 
     @commands.command()
     async def shuffle(self, ctx):
         global queue
         if queue:
             random.shuffle(queue)
-            msg = "Queue shuffled:\n"
-            msg += await self.generateQueue()
+            msg = "Queue shuffled.\n"
+            msg += await self.generateQueue(limit=5)
             await ctx.send(msg)
         else:
             await ctx.send("Queue is empty, nothing to shuffle")
@@ -105,15 +145,21 @@ class MusicCog(commands.Cog):
         vc = ctx.voice_client
         if vc is not None and vc.is_playing():
             vc.stop()
-            await ctx.send("Skipping...")
+            await ctx.send("Skipped current track.")
         else:
             await ctx.send("Nothing to skip")
 
-    async def generateQueue(self):
+    async def generateQueue(self, limit=None):
         msg = ""
-        for i, url in enumerate(queue):
-            title = await MusicUtils.getTitle(url)
+        for i, url in enumerate(queue[:limit] if limit else queue):
+            # Skip playlist URLs in queue (they should have been expanded already)
+            service = get_service_instance(detect_service(url))
+            if await service.is_playlist(url):
+                continue
+            title = await service.get_title(url)
             msg += f"{i + 1}. {title}\n"
+        if limit and len(queue) > limit:
+            msg += f"...and {len(queue) - limit} more tracks in queue."
         return msg
     
 
