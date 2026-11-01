@@ -8,7 +8,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from utils import musicUtils
+from services.youtube import youtube_service
 
 
 YOUTUBE_TEST_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
@@ -18,20 +18,18 @@ EXPECTED_DURATION_IN_SECONDS = 213
 def test_download_audio_saves_stream(monkeypatch, tmp_path):
     audio_bytes = b"test audio data"
     audio_stream = Mock()
-    audio_stream.download.side_effect = lambda output_path, filename: Path(
-        output_path, filename
-    ).write_bytes(audio_bytes)
+    audio_stream.download.side_effect = lambda output_path, filename: Path(output_path, filename).write_bytes(audio_bytes)
     streams = Mock()
     streams.filter.return_value = streams
     streams.first.return_value = audio_stream
 
     monkeypatch.setattr(
-        musicUtils, "YouTube", lambda url: SimpleNamespace(streams=streams)
+        youtube_service, "YouTube", lambda url: SimpleNamespace(streams=streams)
     )
-    monkeypatch.setattr(musicUtils, "dest", f"{tmp_path}{os.sep}")
 
-    assert asyncio.run(musicUtils.MusicUtils.downloadAudio("https://example.com/video"))
-    assert Path(musicUtils.MusicUtils.getFilePath()).read_bytes() == audio_bytes
+    output_file = f"{tmp_path}{os.sep}audio.webm"
+    assert asyncio.run(youtube_service.YouTubeService.download_audio("https://example.com/video", output_file))
+    assert Path(output_file).read_bytes() == audio_bytes
 
 
 def test_download_audio_from_youtube(monkeypatch, tmp_path):
@@ -42,10 +40,10 @@ def test_download_audio_from_youtube(monkeypatch, tmp_path):
     ffprobe = shutil.which("ffprobe")
     assert ffprobe, "ffprobe is required for the YouTube integration test (install FFmpeg)"
 
-    monkeypatch.setattr(musicUtils, "dest", f"{tmp_path}{os.sep}")
-    audio_path = Path(musicUtils.MusicUtils.getFilePath())
+    output_file = f"{tmp_path}{os.sep}audio.webm"
+    audio_path = Path(output_file)
 
-    assert asyncio.run(musicUtils.MusicUtils.downloadAudio(url))
+    assert asyncio.run(youtube_service.YouTubeService.download_audio(url, output_file))
     assert audio_path.is_file()
     minimum_size = int(os.getenv("YOUTUBE_TEST_MIN_SIZE_BYTES", "1024"))
     assert audio_path.stat().st_size >= minimum_size

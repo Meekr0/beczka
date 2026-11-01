@@ -2,22 +2,22 @@ import asyncio
 import discord
 import random
 from discord.ext import commands
-from utils.musicUtils import MusicUtils
+from services.youtube.youtube_service import YouTubeService
 
 queue = []
 current_url = None
 
-fileToPlayPath = MusicUtils.getFilePath()
+AUDIO_FILE_PATH = './data/audio/audio.webm'
 
 async def playNext(ctx, vc):
     global current_url
     if queue:
         current_url = queue.pop(0)
-        title = await MusicUtils.getTitle(current_url)
-        isAudioDownloaded = await MusicUtils.downloadAudio(current_url)
+        title = await YouTubeService.get_title(current_url)
+        isAudioDownloaded = await YouTubeService.download_audio(current_url, AUDIO_FILE_PATH)
         if isAudioDownloaded:
             await ctx.send(f'Now playing: {title}')
-            vc.play(discord.FFmpegPCMAudio(fileToPlayPath), after=lambda e: asyncio.run_coroutine_threadsafe(playNext(ctx, vc), vc.loop))
+            vc.play(discord.FFmpegPCMAudio(AUDIO_FILE_PATH), after=lambda e: asyncio.run_coroutine_threadsafe(playNext(ctx, vc), vc.loop))
         else:
             await ctx.send("Couldn't download the file")
             if queue:
@@ -56,7 +56,7 @@ class MusicCog(commands.Cog):
             vc = currentChannel
 
         queue.append(url)
-        title = await MusicUtils.getTitle(url)
+        title = await YouTubeService.get_title(url)
 
         if vc.is_playing():
             await ctx.send(f'{title} added to queue')
@@ -111,8 +111,8 @@ class MusicCog(commands.Cog):
 
     async def generateQueue(self):
         msg = ""
-        for i, url in enumerate(queue):
-            title = await MusicUtils.getTitle(url)
+        for i, url in enumerate(queue[:limit] if limit else queue):
+            title = await YouTubeService.get_title(url)
             msg += f"{i + 1}. {title}\n"
         return msg
     
