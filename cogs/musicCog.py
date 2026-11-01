@@ -2,19 +2,23 @@ import asyncio
 import discord
 import random
 from discord.ext import commands
-from services.youtube.youtube_service import YouTubeService
+from services.service_detector import detect_service, get_supported_services_list, get_service_instance
 
 queue = []
 current_url = None
+current_service = None
 
 AUDIO_FILE_PATH = './data/audio/audio.webm'
+
 
 async def playNext(ctx, vc):
     global current_url
     if queue:
         current_url = queue.pop(0)
-        title = await YouTubeService.get_title(current_url)
-        isAudioDownloaded = await YouTubeService.download_audio(current_url, AUDIO_FILE_PATH)
+        service = get_service_instance(detect_service(current_url))
+        
+        title = await service.get_title(current_url)
+        isAudioDownloaded = await service.download_audio(current_url, AUDIO_FILE_PATH)
         if isAudioDownloaded:
             await ctx.send(f'Now playing: {title}')
             vc.play(discord.FFmpegPCMAudio(AUDIO_FILE_PATH), after=lambda e: asyncio.run_coroutine_threadsafe(playNext(ctx, vc), vc.loop))
@@ -23,6 +27,7 @@ async def playNext(ctx, vc):
             if queue:
                 await playNext(ctx, vc)
             else:
+                current_url = None
                 await ctx.send("Queue is empty, leaving the channel...")
                 await vc.disconnect()
     else:
@@ -42,6 +47,15 @@ class MusicCog(commands.Cog):
     @commands.command()
     async def play(self, ctx, *, url: str):
 
+        # Detect service from URL
+        detected_service = detect_service(url)
+        
+        if detected_service is None:
+            await ctx.send(f"Unsupported URL. Supported services: {get_supported_services_list()}")
+            return
+
+        service = get_service_instance(detected_service)
+
         # Check if user is in a voice channel
         if ctx.author.voice is None or ctx.author.voice.channel is None:
             await ctx.send("Join a voice channel first.")
@@ -56,19 +70,26 @@ class MusicCog(commands.Cog):
             vc = currentChannel
 
         # Check if URL is a playlist
-        is_playlist = await YouTubeService.is_playlist(url)
+        is_playlist = await service.is_playlist(url)
         
         if is_playlist:
             # Get all video URLs from the playlist
-            playlist_urls = await YouTubeService.get_playlist_urls(url)
-            playlist_title = await YouTubeService.get_playlist_title(url)
+            playlist_urls = await service.get_playlist_urls(url)
+            playlist_title = await service.get_playlist_title(url)
             
             if not playlist_urls:
                 await ctx.send("Couldn't fetch playlist videos.")
                 return
             
-            # Add all playlist videos to queue
-            queue.extend(playlist_urls)
+            # Filter out unsupported URLs from playlist
+            valid_urls = [u for u in playlist_urls if detect_service(u) is not None]
+            
+            if not valid_urls:
+                await ctx.send("No supported URLs found in playlist.")
+                return
+            
+            # Add only valid URLs to queue
+            queue.extend(valid_urls)
             
             if vc.is_playing():
                 await ctx.send(f'Playlist "{playlist_title}" added to queue ({len(playlist_urls)} tracks)')
@@ -78,8 +99,8 @@ class MusicCog(commands.Cog):
         else:
             # Single video
             queue.append(url)
-            title = await YouTubeService.get_title(url)
-
+            title = await service.get_title(url)
+            
             if vc.is_playing():
                 await ctx.send(f'{title} added to queue')
             else:
@@ -132,9 +153,10 @@ class MusicCog(commands.Cog):
         msg = ""
         for i, url in enumerate(queue[:limit] if limit else queue):
             # Skip playlist URLs in queue (they should have been expanded already)
-            if await YouTubeService.is_playlist(url):
+            service = get_service_instance(detect_service(url))
+            if await service.is_playlist(url):
                 continue
-            title = await YouTubeService.get_title(url)
+            title = await service.get_title(url)
             msg += f"{i + 1}. {title}\n"
         if limit and len(queue) > limit:
             msg += f"...and {len(queue) - limit} more tracks in queue."
